@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MCP Communication Patterns Demo</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        .output { background: #f5f5f5; padding: 10px; margin: 10px 0; white-space: pre-wrap; }
+        button { margin: 5px; padding: 10px; }
+        h2 { color: #333; }
+    </style>
+</head>
+<body>
+    <h1>MCP Communication Patterns Demo</h1>
+    
+    <div class="section">
+        <h2>1. Traditional HTTP POST (Request/Response)</h2>
+        <p>This uses the POST /mcp endpoint - sends request, gets immediate response</p>
+        <button onclick="testHttpPost()">Test HTTP POST - List Tools</button>
+        <div id="httpOutput" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>2. Server-Sent Events (One-way Streaming)</h2>
+        <p>This connects to GET /mcp/sse - server sends capabilities and updates. Use POST for commands.</p>
+        <button onclick="connectSSE()">Connect to SSE</button>
+        <button onclick="disconnectSSE()">Disconnect SSE</button>
+        <button onclick="testSSEWithPost()">Test SSE + POST Combo</button>
+        <div id="sseOutput" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>3. WebSocket (Bidirectional Communication)</h2>
+        <p>This connects to /mcp/ws - full duplex communication</p>
+        <button onclick="connectWebSocket()">Connect WebSocket</button>
+        <button onclick="sendWebSocketMessage()">Send List Tools</button>
+        <button onclick="disconnectWebSocket()">Disconnect WebSocket</button>
+        <div id="wsOutput" class="output"></div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        let webSocket = null;
+
+        // 1. HTTP POST - Traditional Request/Response
+        async function testHttpPost() {
+            const output = document.getElementById('httpOutput');
+            output.textContent = 'Sending POST request...\n';
+            
+            try {
+                const response = await fetch('https://localhost:7140/mcp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        jsonrpc: "2.0",
+                        id: "1",
+                        method: "tools/list"
+                    })
+                });
+                
+                const result = await response.json();
+                output.textContent += 'Response received:\n' + JSON.stringify(result, null, 2);
+            } catch (error) {
+                output.textContent += 'Error: ' + error.message;
+            }
+        }
+
+        // 2. Server-Sent Events - One-way Streaming
+        function connectSSE() {
+            const output = document.getElementById('sseOutput');
+            
+            if (eventSource) {
+                output.textContent += 'Already connected to SSE\n';
+                return;
+            }
+            
+            output.textContent = 'Connecting to SSE...\n';
+            
+            eventSource = new EventSource('https://localhost:7140/mcp/sse');
+            
+            eventSource.onopen = function(event) {
+                output.textContent += 'SSE connection opened\n';
+            };
+            
+            eventSource.onmessage = function(event) {
+                output.textContent += 'SSE message: ' + event.data + '\n';
+            };
+            
+            eventSource.addEventListener('capabilities', function(event) {
+                output.textContent += 'Capabilities: ' + event.data + '\n';
+            });
+            
+            eventSource.addEventListener('heartbeat', function(event) {
+                output.textContent += 'Heartbeat: ' + event.data + '\n';
+            });
+            
+            eventSource.onerror = function(event) {
+                output.textContent += 'SSE error occurred\n';
+            };
+        }
+        
+        function disconnectSSE() {
+            const output = document.getElementById('sseOutput');
+            
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                output.textContent += 'SSE connection closed\n';
+            }
+        }
+
+        // Test SSE + POST combination
+        async function testSSEWithPost() {
+            const output = document.getElementById('sseOutput');
+            
+            if (!eventSource) {
+                output.textContent += 'Connect to SSE first!\n';
+                return;
+            }
+            
+            try {
+                const response = await fetch('https://localhost:7140/mcp', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        jsonrpc: "2.0",
+                        id: "sse-test",
+                        method: "tools/call",
+                        params: {
+                            name: "echo",
+                            arguments: { text: "Hello from SSE+POST combo!" }
+                        }
+                    })
+                });
+                
+                const result = await response.json();
+                output.textContent += 'POST Response: ' + JSON.stringify(result, null, 2) + '\n';
+            } catch (error) {
+                output.textContent += 'POST Error: ' + error.message + '\n';
+            }
+        }
+
+        // 3. WebSocket - Bidirectional Communication
+        function connectWebSocket() {
+            const output = document.getElementById('wsOutput');
+            
+            if (webSocket) {
+                output.textContent += 'Already connected to WebSocket\n';
+                return;
+            }
+            
+            output.textContent = 'Connecting to WebSocket...\n';
+            
+            // Note: Use ws:// for localhost without HTTPS
+            webSocket = new WebSocket('wss://localhost:7140/mcp/ws');
+            
+            webSocket.onopen = function(event) {
+                output.textContent += 'WebSocket connection opened\n';
+            };
+            
+            webSocket.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    output.textContent += 'WebSocket message:\n' + JSON.stringify(data, null, 2) + '\n';
+                } catch (e) {
+                    output.textContent += 'WebSocket message: ' + event.data + '\n';
+                }
+            };
+            
+            webSocket.onclose = function(event) {
+                output.textContent += 'WebSocket connection closed\n';
+                webSocket = null;
+            };
+            
+            webSocket.onerror = function(event) {
+                output.textContent += 'WebSocket error occurred\n';
+            };
+        }
+        
+        function sendWebSocketMessage() {
+            const output = document.getElementById('wsOutput');
+            
+            if (!webSocket) {
+                output.textContent += 'Not connected to WebSocket\n';
+                return;
+            }
+            
+            const message = {
+                jsonrpc: "2.0",
+                id: "ws-1",
+                method: "tools/list"
+            };
+            
+            output.textContent += 'Sending: ' + JSON.stringify(message) + '\n';
+            webSocket.send(JSON.stringify(message));
+        }
+        
+        function disconnectWebSocket() {
+            const output = document.getElementById('wsOutput');
+            
+            if (webSocket) {
+                webSocket.close();
+                webSocket = null;
+                output.textContent += 'WebSocket connection closed\n';
+            }
+        }
+    </script>
+</body>
+</html>

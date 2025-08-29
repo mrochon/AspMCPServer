@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Server Test Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+            margin: 5px 0;
+        }
+        textarea {
+            height: 100px;
+            font-family: monospace;
+        }
+        .response {
+            background-color: #e9ecef;
+            border-left: 4px solid #007bff;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>ASP.NET MCP Server Test Client</h1>
+    
+    <!-- Server-Sent Events Section -->
+    <div class="container">
+        <h2>Server-Sent Events (SSE) Connection</h2>
+        <div id="sseStatus" class="status disconnected">Disconnected</div>
+        <button id="connectSSE">Connect SSE</button>
+        <button id="disconnectSSE" disabled>Disconnect SSE</button>
+        <div>
+            <h3>SSE Events Log:</h3>
+            <div id="sseLog" class="log"></div>
+            <button onclick="clearLog('sseLog')">Clear Log</button>
+        </div>
+    </div>
+
+    <!-- MCP JSON-RPC Section -->
+    <div class="container">
+        <h2>MCP JSON-RPC Testing</h2>
+        <div>
+            <button onclick="testInitialize()">Initialize</button>
+            <button onclick="testListTools()">List Tools</button>
+            <button onclick="testListResources()">List Resources</button>
+            <button onclick="testListPrompts()">List Prompts</button>
+        </div>
+        
+        <h3>Tool Testing:</h3>
+        <div>
+            <button onclick="testEchoTool()">Echo Tool</button>
+            <button onclick="testTimestampTool()">Timestamp Tool</button>
+            <button onclick="testWeatherTool()">Weather Tool</button>
+        </div>
+
+        <h3>Custom JSON-RPC Request:</h3>
+        <textarea id="customRequest" placeholder="Enter custom JSON-RPC request...">{
+  "jsonrpc": "2.0",
+  "id": "custom",
+  "method": "tools/call",
+  "params": {
+    "name": "echo",
+    "arguments": {
+      "text": "Custom message"
+    }
+  }
+}</textarea>
+        <br>
+        <button onclick="sendCustomRequest()">Send Custom Request</button>
+
+        <h3>Response:</h3>
+        <div id="response" class="response">Response will appear here...</div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        const serverUrl = 'https://localhost:5001';
+
+        // SSE Functions
+        function connectSSE() {
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            eventSource = new EventSource(`${serverUrl}/mcp/sse`);
+            
+            eventSource.onopen = function() {
+                document.getElementById('sseStatus').textContent = 'Connected';
+                document.getElementById('sseStatus').className = 'status connected';
+                document.getElementById('connectSSE').disabled = true;
+                document.getElementById('disconnectSSE').disabled = false;
+                logSSE('Connected to SSE endpoint');
+            };
+
+            eventSource.onmessage = function(event) {
+                logSSE(`Message: ${event.data}`);
+            };
+
+            eventSource.addEventListener('connected', function(event) {
+                logSSE(`Connected event: ${event.data}`);
+            });
+
+            eventSource.addEventListener('heartbeat', function(event) {
+                logSSE(`Heartbeat: ${event.data}`);
+            });
+
+            eventSource.onerror = function(error) {
+                logSSE(`Error: ${error}`);
+                document.getElementById('sseStatus').textContent = 'Error/Disconnected';
+                document.getElementById('sseStatus').className = 'status disconnected';
+                document.getElementById('connectSSE').disabled = false;
+                document.getElementById('disconnectSSE').disabled = true;
+            };
+        }
+
+        function disconnectSSE() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            document.getElementById('sseStatus').textContent = 'Disconnected';
+            document.getElementById('sseStatus').className = 'status disconnected';
+            document.getElementById('connectSSE').disabled = false;
+            document.getElementById('disconnectSSE').disabled = true;
+            logSSE('Disconnected from SSE endpoint');
+        }
+
+        function logSSE(message) {
+            const log = document.getElementById('sseLog');
+            const timestamp = new Date().toLocaleTimeString();
+            log.textContent += `[${timestamp}] ${message}\n`;
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function clearLog(logId) {
+            document.getElementById(logId).textContent = '';
+        }
+
+        // MCP JSON-RPC Functions
+        async function sendMCPRequest(request) {
+            try {
+                const response = await fetch(`${serverUrl}/mcp`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(request)
+                });
+
+                const result = await response.json();
+                document.getElementById('response').textContent = JSON.stringify(result, null, 2);
+                return result;
+            } catch (error) {
+                document.getElementById('response').textContent = `Error: ${error.message}`;
+                console.error('Error:', error);
+            }
+        }
+
+        function testInitialize() {
+            const request = {
+                jsonrpc: "2.0",
+                id: "init",
+                method: "initialize",
+                params: {
+                    protocolVersion: "2024-11-05",
+                    capabilities: {},
+                    clientInfo: {
+                        name: "HTML Test Client",
+                        version: "1.0.0"
+                    }
+                }
+            };
+            sendMCPRequest(request);
+        }
+
+        function testListTools() {
+            const request = {
+                jsonrpc: "2.0",
+                id: "list-tools",
+                method: "tools/list"
+            };
+            sendMCPRequest(request);
+        }
+
+        function testListResources() {
+            const request = {
+                jsonrpc: "2.0",
+                id: "list-resources",
+                method: "resources/list"
+            };
+            sendMCPRequest(request);
+        }
+
+        function testListPrompts() {
+            const request = {
+                jsonrpc: "2.0",
+                id: "list-prompts",
+                method: "prompts/list"
+            };
+            sendMCPRequest(request);
+        }
+
+        function testEchoTool() {
+            const request = {
+                jsonrpc: "2.0",
+                id: "echo-test",
+                method: "tools/call",
+                params: {
+                    name: "echo",
+                    arguments: {
+                        text: "Hello from HTML client!"
+                    }
+                }
+            };
+            sendMCPRequest(request);
+        }
+
+        function testTimestampTool() {
+            const request = {
+                jsonrpc: "2.0",
+                id: "timestamp-test",
+                method: "tools/call",
+                params: {
+                    name: "timestamp",
+                    arguments: {}
+                }
+            };
+            sendMCPRequest(request);
+        }
+
+        function testWeatherTool() {
+            const location = prompt("Enter location for weather:", "London");
+            if (location) {
+                const request = {
+                    jsonrpc: "2.0",
+                    id: "weather-test",
+                    method: "tools/call",
+                    params: {
+                        name: "weather",
+                        arguments: {
+                            location: location
+                        }
+                    }
+                };
+                sendMCPRequest(request);
+            }
+        }
+
+        function sendCustomRequest() {
+            try {
+                const customRequestText = document.getElementById('customRequest').value;
+                const request = JSON.parse(customRequestText);
+                sendMCPRequest(request);
+            } catch (error) {
+                document.getElementById('response').textContent = `Invalid JSON: ${error.message}`;
+            }
+        }
+
+        // Event Listeners
+        document.getElementById('connectSSE').addEventListener('click', connectSSE);
+        document.getElementById('disconnectSSE').addEventListener('click', disconnectSSE);
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
+    </script>
+</body>
+</html>
