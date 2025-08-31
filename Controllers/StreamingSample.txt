@@ -1,0 +1,132 @@
+
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using System.Threading.Channels;
+
+var builder = WebApplication.CreateBuilder(args);
+// Add OpenAPI support
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Weather MCP API",
+        Version = "v1",
+        Description = "An MCP-compatible endpoint for weather information"
+    });
+});
+
+// Add JWT Authentication
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = "your-issuer",
+            ValidAudience = "your-audience",
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("your-secret-key"))
+        };
+    });
+
+var app = builder.Build();
+// Enable Swagger middleware
+app.UseSwagger();
+app.UseSwaggerUI();
+
+// Enable authentication middleware
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Streamable weather tool endpoint
+app.MapGet("/weather", async ([FromQuery] string city, HttpResponse response) =>
+{
+    response.Headers.Add("Content-Type", "text/plain");
+    response.Headers.Add("Transfer-Encoding", "chunked");
+
+    var stream = response.Body;
+    var writer = new StreamWriter(stream, Encoding.UTF8) { AutoFlush = true };
+
+    var updates = new[]
+    {
+        $"Fetching weather for {city}...",
+        $"Current temperature in {city}: 25°C",
+        $"Conditions: Sunny",
+        $"Humidity: 40%",
+        $"Wind: 10 km/h"
+    };
+
+    foreach (var update in updates)
+    {
+        await writer.WriteLineAsync(update);
+        await writer.FlushAsync();
+        await Task.Delay(1000);
+    }
+
+    await writer.WriteLineAsync("[DONE]");
+})
+.RequireAuthorization()
+.WithName("GetWeather")
+.WithOpenApi(op =>
+{
+    op.Summary = "Stream weather information";
+    op.Description = "Streams mock weather information for a given city using chunked transfer encoding. Requires JWT authentication.";
+    return op;
+});
+
+// MCP tools metadata endpoint
+app.MapGet("/.well-known/mcp/tools", () =>
+{
+    return Results.Json(new[]
+    {
+        new
+        {
+            name = "GetWeather",
+            description = "Streams weather information for a specified city.",
+            endpoint = "/weather",
+            method = "GET",
+            parameters = new[]
+            {
+                new { name = "city", type = "string", required = true, description = "Name of the city to get weather for." }
+            },
+            requiresAuth = true
+        }
+    });
+})
+.WithName("McpTools")
+.WithOpenApi(op =>
+{
+    op.Summary = "MCP Tools Metadata";
+    op.Description = "Provides metadata about tools exposed by this MCP server.";
+    return op;
+});
+
+// MCP resources metadata endpoint
+app.MapGet("/.well-known/mcp/resources", () =>
+{
+    return Results.Json(new[]
+    {
+        new
+        {
+            name = "WeatherInfo",
+            description = "A streamable resource that provides weather information for a city.",
+            type = "text/plain",
+            endpoint = "/weather"
+        }
+    });
+})
+.WithName("McpResources")
+.WithOpenApi(op =>
+{
+    op.Summary = "MCP Resources Metadata";
+    op.Description = "Provides metadata about resources exposed by this MCP server.";
+    return op;
+});
+
+app.Run();

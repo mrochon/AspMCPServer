@@ -163,9 +163,12 @@ namespace AspMCPServer.Controllers
                     location,
                     temperature = new Random().Next(-10, 35),
                     condition = new[] { "Sunny", "Cloudy", "Rainy", "Snowy" }[new Random().Next(4)],
-                    humidity = new Random().Next(30, 90)
+                    humidity = new Random().Next(30, 90),
+                    windSpeed = new Random().Next(5, 25),
+                    pressure = new Random().Next(980, 1030)
                 };
 
+                // Return streaming response with 3 chunks
                 return Ok(new
                 {
                     content = new[]
@@ -173,8 +176,24 @@ namespace AspMCPServer.Controllers
                         new
                         {
                             type = "text",
-                            text = $"Weather in {weather.location}: {weather.temperature}°C, {weather.condition}, {weather.humidity}% humidity"
+                            text = $"🌍 Weather Report for {weather.location}:\n"
+                        },
+                        new
+                        {
+                            type = "text",
+                            text = $"🌡️ Temperature: {weather.temperature}°C\n🌤️ Condition: {weather.condition}\n"
+                        },
+                        new
+                        {
+                            type = "text",
+                            text = $"💧 Humidity: {weather.humidity}%\n💨 Wind Speed: {weather.windSpeed} km/h\n🔽 Pressure: {weather.pressure} hPa"
                         }
+                    },
+                    isStreaming = true,
+                    streamingInfo = new
+                    {
+                        totalChunks = 3,
+                        description = "Weather data streamed in 3 parts: location, temperature/condition, and atmospheric details"
                     }
                 });
             }

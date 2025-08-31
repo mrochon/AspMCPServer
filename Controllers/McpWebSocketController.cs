@@ -190,6 +190,34 @@ namespace AspMCPServer.Controllers
                                 type = "object",
                                 properties = new { }
                             }
+                        },
+                        new
+                        {
+                            name = "weather",
+                            description = "Get weather information for a location (streamed response)",
+                            inputSchema = new
+                            {
+                                type = "object",
+                                properties = new
+                                {
+                                    location = new { type = "string", description = "Location to get weather for" }
+                                },
+                                required = new[] { "location" }
+                            }
+                        },
+                        new
+                        {
+                            name = "calculate",
+                            description = "Perform basic arithmetic calculations",
+                            inputSchema = new
+                            {
+                                type = "object",
+                                properties = new
+                                {
+                                    expression = new { type = "string", description = "Mathematical expression to evaluate" }
+                                },
+                                required = new[] { "expression" }
+                            }
                         }
                     }
                 },
@@ -213,6 +241,8 @@ namespace AspMCPServer.Controllers
                 {
                     "echo" => HandleEchoTool(id, hasArguments ? argumentsElement : default),
                     "timestamp" => HandleTimestampTool(id),
+                    "weather" => HandleWeatherTool(id, hasArguments ? argumentsElement : default),
+                    "calculate" => HandleCalculateTool(id, hasArguments ? argumentsElement : default),
                     _ => CreateErrorResponse(id, -32602, $"Unknown tool: {toolName}")
                 };
             }
@@ -313,6 +343,130 @@ namespace AspMCPServer.Controllers
                 },
                 id
             };
+        }
+
+        private object HandleWeatherTool(string? id, JsonElement argumentsElement)
+        {
+            var location = "Unknown location";
+            
+            if (argumentsElement.ValueKind != JsonValueKind.Undefined &&
+                argumentsElement.TryGetProperty("location", out var locationElement))
+            {
+                location = locationElement.GetString() ?? "Unknown location";
+            }
+
+            // Simulate weather data
+            var weather = new
+            {
+                location,
+                temperature = new Random().Next(-10, 35),
+                condition = new[] { "Sunny", "Cloudy", "Rainy", "Snowy" }[new Random().Next(4)],
+                humidity = new Random().Next(30, 90),
+                windSpeed = new Random().Next(5, 25),
+                pressure = new Random().Next(980, 1030)
+            };
+
+            // Return streaming response with 3 chunks
+            return new
+            {
+                jsonrpc = "2.0",
+                result = new
+                {
+                    content = new[]
+                    {
+                        new
+                        {
+                            type = "text",
+                            text = $"🌍 Weather Report for {weather.location}:\n"
+                        },
+                        new
+                        {
+                            type = "text",
+                            text = $"🌡️ Temperature: {weather.temperature}°C\n🌤️ Condition: {weather.condition}\n"
+                        },
+                        new
+                        {
+                            type = "text",
+                            text = $"💧 Humidity: {weather.humidity}%\n💨 Wind Speed: {weather.windSpeed} km/h\n🔽 Pressure: {weather.pressure} hPa"
+                        }
+                    },
+                    isStreaming = true,
+                    streamingInfo = new
+                    {
+                        totalChunks = 3,
+                        description = "Weather data streamed in 3 parts: location, temperature/condition, and atmospheric details"
+                    }
+                },
+                id
+            };
+        }
+
+        private object HandleCalculateTool(string? id, JsonElement argumentsElement)
+        {
+            try
+            {
+                var expression = "0";
+                
+                if (argumentsElement.ValueKind != JsonValueKind.Undefined &&
+                    argumentsElement.TryGetProperty("expression", out var expressionElement))
+                {
+                    expression = expressionElement.GetString() ?? "0";
+                }
+
+                // Simple calculator - in production, use a proper expression evaluator
+                var result = EvaluateSimpleExpression(expression);
+
+                return new
+                {
+                    jsonrpc = "2.0",
+                    result = new
+                    {
+                        content = new[]
+                        {
+                            new
+                            {
+                                type = "text",
+                                text = $"Result: {expression} = {result}"
+                            }
+                        }
+                    },
+                    id
+                };
+            }
+            catch (Exception ex)
+            {
+                return CreateErrorResponse(id, -32603, $"Error calculating expression: {ex.Message}");
+            }
+        }
+
+        private double EvaluateSimpleExpression(string expression)
+        {
+            // Very basic expression evaluator - replace with proper library in production
+            expression = expression.Replace(" ", "");
+            
+            // Handle simple operations like "2+3", "10-5", "4*3", "12/4"
+            if (expression.Contains('+'))
+            {
+                var parts = expression.Split('+');
+                return double.Parse(parts[0]) + double.Parse(parts[1]);
+            }
+            if (expression.Contains('-'))
+            {
+                var parts = expression.Split('-');
+                return double.Parse(parts[0]) - double.Parse(parts[1]);
+            }
+            if (expression.Contains('*'))
+            {
+                var parts = expression.Split('*');
+                return double.Parse(parts[0]) * double.Parse(parts[1]);
+            }
+            if (expression.Contains('/'))
+            {
+                var parts = expression.Split('/');
+                return double.Parse(parts[0]) / double.Parse(parts[1]);
+            }
+            
+            return double.Parse(expression);
         }
 
         private object CreateErrorResponse(string? id, int code, string message)
